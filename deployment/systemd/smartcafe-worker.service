@@ -1,0 +1,30 @@
+[Unit]
+Description=Smart Café Vision — AI worker (camera capture, detection, tracking)
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=network-online.target redis-server.service smartcafe-backend.service
+Wants=network-online.target
+Requires=redis-server.service
+
+[Service]
+Type=exec
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe/ai_worker
+EnvironmentFile=/opt/smartcafe/.env
+Environment=AI_MODELS_DIR=/opt/smartcafe/ai_worker/models
+Environment=BACKEND_INTERNAL_URL=http://127.0.0.1:8000
+ExecStart=/opt/smartcafe/.venv/bin/python -m worker
+Restart=on-failure
+RestartSec=5
+# Give an in-progress camera reconnect/inference tick a moment to unwind.
+TimeoutStopSec=20
+
+# No ProtectSystem=strict here: unlike the other units, this one legitimately
+# writes outside its working directory the first time it downloads model
+# weights (see docs/gpu-setup.md) -- AI_MODELS_DIR is the one path it needs.
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/opt/smartcafe/ai_worker/models
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,31 @@
+# AI worker dependencies.
+#
+# Installed from ../shared so the event contract cannot drift from the backend:
+#   pip install -e ../shared
+
+redis>=5.0,<7.0
+python-dotenv>=1.0
+numpy>=1.26,<3.0
+requests>=2.32,<3.0
+
+# opencv-python, not opencv-python-headless: ultralytics (below) references
+# cv2.imshow unconditionally at import time (ultralytics/utils/patches.py),
+# which does not exist in the headless build -- ultralytics fails to import
+# at all with headless installed, not just when a GUI function is actually
+# called. The worker never calls imshow(), but the symbol still has to exist.
+#
+# This does mean the container needs the couple of system graphics libraries
+# opencv-python links against even when nothing is ever displayed -- see
+# ai_worker/Dockerfile (`libgl1`, `libglib2.0-0`). This is the same choice
+# ultralytics' own official Docker images make, for the same reason.
+opencv-python>=4.14,<5.0
+
+# torch: install the CPU build by default (this index is CPU-only, ~10x
+# smaller than the CUDA build PyPI's own index serves). GPU installs override
+# this -- see docs/gpu-setup.md -- typically by installing from
+# https://download.pytorch.org/whl/cu1XX instead before this file runs.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+torch>=2.4
+
+ultralytics>=8.3,<9.0

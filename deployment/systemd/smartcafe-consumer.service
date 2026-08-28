@@ -1,0 +1,29 @@
+[Unit]
+Description=Smart Café Vision — event bus consumer
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=network-online.target postgresql.service redis-server.service smartcafe-backend.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe/backend
+EnvironmentFile=/opt/smartcafe/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+ExecStart=/opt/smartcafe/.venv/bin/python manage.py consume_events --consumer-name ingest-1
+Restart=on-failure
+RestartSec=5
+# Same reasoning as docker-compose.yml's event-consumer: let an in-flight
+# ingest batch finish and acknowledge before the process is killed, rather
+# than force-killing mid-batch and relying on redelivery every time.
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

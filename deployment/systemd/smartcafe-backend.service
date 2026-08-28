@@ -1,0 +1,32 @@
+[Unit]
+Description=Smart Café Vision — backend API and WebSocket
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+# Soft dependency: postgresql.service/redis-server.service are the common
+# Debian/RHEL unit names for a locally-installed DB and Redis. If yours run
+# elsewhere (another host, a container), drop these two lines -- Restart=
+# below already covers a DB that becomes reachable a few seconds late.
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe/backend
+EnvironmentFile=/opt/smartcafe/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+ExecStart=/opt/smartcafe/.venv/bin/uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --proxy-headers
+Restart=on-failure
+RestartSec=5
+
+# Same non-root-and-locked-down posture as backend/Dockerfile's `USER
+# appuser`, expressed in systemd terms instead of a container boundary.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/smartcafe/backend/mediafiles /opt/smartcafe/backend/staticfiles
+
+[Install]
+WantedBy=multi-user.target

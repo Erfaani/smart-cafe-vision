@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Smart Café Vision's database backup nightly
+
+[Timer]
+# A café's quiet hour. Adjust to your own closing time.
+OnCalendar=*-*-* 03:30:00
+# If the machine was off at 03:30 (power cut overnight), run the missed
+# backup as soon as it's back up rather than silently skipping a day.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

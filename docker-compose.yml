@@ -1,0 +1,283 @@
+# Smart Café Vision — local-first stack.
+#
+# Everything here runs inside the café. Nothing in this file requires an
+# internet connection at runtime (spec §16).
+#
+#   docker compose up -d                 # core stack
+#   docker compose --profile proxy up -d # + nginx on port 80
+#
+# The AI worker lives in docker-compose.ai.yml because its image is large and
+# GPU-specific; see docs/gpu-setup.md.
+
+name: smartcafe
+
+# Every service below reuses this. Docker's default json-file driver keeps
+# logs forever -- on a café mini PC nobody is watching, that is a slow disk
+# leak, not a log. 10 MB x 5 files is enough history to debug a problem
+# noticed a day or two late without ever growing unbounded (§28).
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # --------------------------------------------------------------------------- #
+  # Data stores
+  # --------------------------------------------------------------------------- #
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smartcafe}
+      POSTGRES_USER: ${POSTGRES_USER:-smartcafe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartcafe}
+      # Café servers are frequently powered off at closing time by pulling the
+      # plug. Checksums turn silent page corruption into a loud error.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartcafe} -d ${POSTGRES_DB:-smartcafe}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # Not published to the host by default: the database must not be reachable
+    # from the café's guest wifi.
+    expose:
+      - "5432"
+    # A café's occupancy/session tables stay small (§10 backup guidance is
+    # built around this); 1 GB is generous headroom, not a tuned ceiling. A
+    # limit that is hit is a runaway query to investigate, not normal
+    # operation -- see docs/production.md.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly: the event stream is the buffer between the AI worker and the
+    # backend. Losing it on an unclean shutdown loses events that were captured
+    # but not yet ingested.
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    expose:
+      - "6379"
+    # Above Redis's own --maxmemory 512mb, so the container limit is never
+    # what actually caps Redis -- it exists only to stop the *process*
+    # overhead and AOF rewrite buffers around that ceiling from being able to
+    # take the whole host down with it.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 768m
+    logging: *default-logging
+
+  # --------------------------------------------------------------------------- #
+  # Backend
+  # --------------------------------------------------------------------------- #
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.production}
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/mediafiles
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging: *default-logging
+
+  # Applies migrations once, then exits. Separated from the server so two
+  # backend replicas can never race each other applying the same migration.
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.production}
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput"
+    volumes:
+      - media_data:/app/mediafiles
+    restart: "no"
+    logging: *default-logging
+
+  # The event bus consumer. Its own process so a slow ingest batch can never add
+  # latency to a dashboard request, and so the API can restart without pausing
+  # event capture.
+  event-consumer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.production}
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "manage.py", "consume_events", "--consumer-name", "ingest-1"]
+    # Give the consumer time to finish the in-flight batch before SIGKILL.
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging: *default-logging
+
+  celery:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.production}
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # --concurrency 2: analytics rollups are the only jobs here, and CPU on a
+    # café mini PC belongs to inference.
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--concurrency=2"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging: *default-logging
+
+  # Schedules CELERY_BEAT_SCHEDULE (e.g. apps.sessions.close_stale_sessions,
+  # spec §5) onto the `celery` worker above. Its own process: a beat process
+  # that also executed tasks could double-schedule a job after a slow one
+  # blocks its tick.
+  celery-beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.production}
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "config", "beat", "--loglevel=info"]
+    # A scheduler, not a worker -- it only ever decides "is it time yet,"
+    # never runs a task body itself.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128m
+    logging: *default-logging
+
+  # --------------------------------------------------------------------------- #
+  # Frontend
+  # --------------------------------------------------------------------------- #
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # NEXT_PUBLIC_* values are inlined into the client bundle at build time
+      # (see frontend/Dockerfile) -- the `environment:` entry below has no
+      # effect on them; it only reaches the server-side Next process at
+      # runtime. Phase 7's public display is the first feature that actually
+      # opens this socket from the browser, so getting this wrong now means a
+      # kiosk TV silently trying to reach its own `localhost` instead of the
+      # café server.
+      args:
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging: *default-logging
+
+  # --------------------------------------------------------------------------- #
+  # Optional reverse proxy — one port for dashboard, API and display
+  # --------------------------------------------------------------------------- #
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles: ["proxy"]
+    volumes:
+      - ./deployment/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deployment/nginx/proxy_params:/etc/nginx/proxy_params_scv:ro
+      - media_data:/var/www/media:ro
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      - backend
+      - frontend
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128m
+    logging: *default-logging
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:

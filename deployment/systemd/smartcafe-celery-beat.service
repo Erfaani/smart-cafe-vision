@@ -1,0 +1,28 @@
+[Unit]
+Description=Smart Café Vision — Celery beat scheduler
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe/backend
+EnvironmentFile=/opt/smartcafe/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+# Its own unit, same reasoning as docker-compose.yml's celery-beat: a process
+# that both schedules and executes tasks could double-schedule a job after a
+# slow one blocks its own tick.
+ExecStart=/opt/smartcafe/.venv/bin/celery -A config beat --loglevel=info
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

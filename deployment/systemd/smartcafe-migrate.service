@@ -1,0 +1,28 @@
+[Unit]
+Description=Smart Café Vision — apply database migrations (run manually, install/upgrade only)
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+# Not part of any .target and never enabled -- run it by hand on install and
+# again on every upgrade, before (re)starting smartcafe-backend.service:
+#   sudo systemctl start smartcafe-migrate.service
+#   sudo journalctl -u smartcafe-migrate.service --no-pager
+# Same separation docker-compose.yml's `migrate` service exists for: applying
+# schema changes is a one-shot step, never something a long-running unit
+# should retry or two replicas should race each other on.
+Type=oneshot
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe/backend
+EnvironmentFile=/opt/smartcafe/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+ExecStart=/opt/smartcafe/.venv/bin/python manage.py migrate --noinput
+ExecStart=/opt/smartcafe/.venv/bin/python manage.py collectstatic --noinput
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/smartcafe/backend/staticfiles

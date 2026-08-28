@@ -1,0 +1,16 @@
+[Unit]
+Description=Smart Café Vision — nightly database backup
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe
+EnvironmentFile=/opt/smartcafe/.env
+Environment=SMARTCAFE_NO_DOCKER=1
+Environment=BACKUP_DIR=/opt/smartcafe/backups
+Environment=BACKUP_RETENTION_DAYS=14
+ExecStart=/opt/smartcafe/scripts/backup.sh

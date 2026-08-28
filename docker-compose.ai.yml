@@ -1,0 +1,68 @@
+# AI worker — kept out of docker-compose.yml on purpose.
+#
+# Two reasons: the image is large and GPU-specific, and a café should be able to
+# run the dashboard and configure cameras before the vision stack is installed.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d
+#
+# GPU: uncomment the `deploy` block and install the NVIDIA Container Toolkit
+# (docs/gpu-setup.md). Without it the worker runs on CPU, which is adequate for
+# one or two cameras at a reduced inference rate.
+
+name: smartcafe
+
+# Same rotation policy as docker-compose.yml (see its comment) -- a separate
+# anchor because this file can be applied on its own, without the base file's
+# anchor in scope.
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  ai-worker:
+    build:
+      context: .
+      dockerfile: ai_worker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      AI_WORKER_ID: ${AI_WORKER_ID:-worker-1}
+      AI_DEVICE: ${AI_DEVICE:-auto}
+      AI_TARGET_FPS: ${AI_TARGET_FPS:-10}
+      CAFE_ID: ${CAFE_ID:-}
+      # Where a bare AI_MODEL filename is downloaded to/loaded from --
+      # backed by the ai_models volume below, so the one-time download
+      # survives a container recreation instead of vanishing with the
+      # container's writable layer. See worker/detector.py:resolve_model_path.
+      AI_MODELS_DIR: /app/models
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ai_models:/app/models
+    stop_grace_period: 20s
+    logging: *default-logging
+
+    # Unlike every fixed limit in docker-compose.yml, this one genuinely needs
+    # to scale with the install -- docs/hardware.md sizes this same worker
+    # anywhere from a 4-core mini PC (1 camera) to a 12+ core tower splitting
+    # 16 cameras across two worker processes. Env-overridable rather than a
+    # value to hand-edit here per install; the defaults below cover the
+    # 1-2 camera, CPU-only case docs/hardware.md calls the typical install.
+    deploy:
+      resources:
+        limits:
+          cpus: ${AI_WORKER_CPU_LIMIT:-4.0}
+          memory: ${AI_WORKER_MEMORY_LIMIT:-4g}
+        # --- NVIDIA GPU -------------------------------------------------------
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
+
+volumes:
+  ai_models:

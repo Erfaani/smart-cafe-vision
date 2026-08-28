@@ -1,0 +1,27 @@
+[Unit]
+Description=Smart Café Vision — Celery worker (analytics rollups, stale-session cleanup)
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe/backend
+EnvironmentFile=/opt/smartcafe/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+# --concurrency 2, same reasoning as docker-compose.yml: this is rollups and
+# cleanup, not inference -- CPU on a café server belongs to the AI worker.
+ExecStart=/opt/smartcafe/.venv/bin/celery -A config worker --loglevel=info --concurrency=2
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

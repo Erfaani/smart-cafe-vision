@@ -1,0 +1,29 @@
+[Unit]
+Description=Smart Café Vision — dashboard and public display (Next.js)
+Documentation=https://github.com/smartcafevision/smartcafevision
+After=network-online.target smartcafe-backend.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=smartcafe
+Group=smartcafe
+WorkingDirectory=/opt/smartcafe/frontend
+EnvironmentFile=/opt/smartcafe/.env
+Environment=NODE_ENV=production
+Environment=BACKEND_INTERNAL_URL=http://127.0.0.1:8000
+# `npm run build` (which bakes NEXT_PUBLIC_WS_URL into the client bundle --
+# see docs/production.md) must have already been run once as part of install
+# or upgrade; this unit only starts the already-built server.
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/smartcafe/frontend/.next
+
+[Install]
+WantedBy=multi-user.target

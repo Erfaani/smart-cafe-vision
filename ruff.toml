@@ -1,0 +1,21 @@
+# One lint configuration for backend, ai_worker and shared, so a rule cannot
+# apply to some of the Python in this repository and not the rest.
+
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "node_modules", "**/migrations/*"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "C4", "DJ"]
+ignore = [
+    # Long lines are wrapped by hand where it helps readability; the limit is
+    # advisory rather than a formatter mandate here.
+    "E501",
+]
+
+[lint.per-file-ignores]
+"backend/config/settings/*" = ["F403", "F405"]
+"**/tests/*" = ["B011"]
+
+[lint.isort]
+known-first-party = ["apps", "config", "worker", "scv_contracts"]

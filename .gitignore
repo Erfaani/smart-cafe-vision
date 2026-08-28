@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.sqlite3
+
+# Django
+staticfiles/
+!staticfiles/.gitkeep
+mediafiles/
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# AI models & weights
+*.pt
+*.onnx
+*.engine
+models/weights/
+
+# Recorded media (never commit café footage)
+recordings/
+snapshots/
+
+# Local demo assets (sample video used for manual testing, not a deliverable)
+demo/
+
+# Database backups (scripts/backup.sh)
+backups/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+!.vscode/extensions.json
+
+# Logs
+logs/
+*.log

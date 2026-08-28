@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/*
+ * Two visual identities live in this app and must never bleed into each other:
+ *
+ *   - the admin dashboard: quiet, dense, analytical (these tokens)
+ *   - the public display:  large, playful, readable across a room (Phase 7)
+ *
+ * The dashboard palette is intentionally low-chroma so that the one place we do
+ * use strong colour — a customer's stay-time state — carries meaning instead of
+ * competing with decoration.
+ */
+
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-raised: #f7f7f8;
+  --color-border-subtle: #e4e4e7;
+  --color-ink: #18181b;
+  --color-ink-muted: #52525b;
+  --color-accent: #0f766e;
+
+  /* Component health vocabulary, matched to the backend's ok/degraded/down. */
+  --color-status-ok: #15803d;
+  --color-status-degraded: #b45309;
+  --color-status-down: #b91c1c;
+}
+
+/*
+ * Dark mode overrides the generated custom properties directly rather than
+ * declaring a second `@theme` block: `@theme` is a build-time directive and
+ * cannot be nested inside a media query. Utilities resolve through
+ * `var(--color-*)`, so redefining the variables here is enough.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-surface: #0b0b0d;
+    --color-surface-raised: #161619;
+    --color-border-subtle: #27272a;
+    --color-ink: #fafafa;
+    --color-ink-muted: #a1a1aa;
+    --color-accent: #2dd4bf;
+
+    --color-status-ok: #4ade80;
+    --color-status-degraded: #fbbf24;
+    --color-status-down: #f87171;
+  }
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Persian renders cramped in most default stacks, and a large share of installs
+ * are expected to run the dashboard in Farsi. */
+:lang(fa) {
+  line-height: 1.9;
+}
