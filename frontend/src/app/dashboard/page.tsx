@@ -88,9 +88,9 @@ export default async function OverviewPage() {
       <section className="rounded-lg border border-border-subtle bg-surface-raised px-4 py-4">
         <h2 className="text-sm font-medium text-ink">What is running</h2>
         <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-          Camera capture, person detection and tracking, entry/exit stay-time, the public display,
-          and occupancy analytics are all live. Table analytics and production hardening are still
-          ahead — those sections of the menu are marked <em>soon</em> until they work.
+          Camera capture, person detection and tracking, entry/exit stay-time, table occupancy, the
+          public display, staff and message management, and analytics are all live. The System
+          section of the menu is the one part still marked <em>soon</em>.
         </p>
         {health?.components.ai_workers?.status === "degraded" ? (
           <p className="mt-3 text-sm text-ink-muted">

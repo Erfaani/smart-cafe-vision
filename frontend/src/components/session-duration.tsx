@@ -39,5 +39,15 @@ export function SessionDuration({
   }, [entryAt, fixedSeconds]);
 
   const color = stops ? colorForDuration(seconds, stops) : undefined;
-  return <span style={color ? { color } : undefined}>{formatDuration(seconds)}</span>;
+  // suppressHydrationWarning: for a live-ticking session this text is a
+  // clock, not fixed content -- the server and client necessarily render it
+  // a moment apart, so a one-second mismatch on first paint is expected
+  // (React's own documented case for this prop), not a bug to chase. An
+  // ended session's fixedSeconds is identical on both sides, so there is
+  // nothing to suppress in that case -- this prop is a no-op then.
+  return (
+    <span style={color ? { color } : undefined} suppressHydrationWarning>
+      {formatDuration(seconds)}
+    </span>
+  );
 }
